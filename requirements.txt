@@ -1,0 +1,19 @@
+Django>=4.2,<5.0
+djangorestframework>=3.14
+celery>=5.3
+redis>=5.0
+psycopg2-binary>=2.9
+dj-database-url>=2.1
+clickhouse-driver>=0.2.7
+# Test
+pytest>=8.0
+pytest-django>=4.8
+pytest-mock>=3.12
+factory-boy>=3.3
+pytest-cov>=5.0
+
+# Döküman
+drf-spectacular>=0.27
+
+# logging
+python-logstash>=0.4.8
