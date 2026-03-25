@@ -17,3 +17,6 @@ drf-spectacular>=0.27
 
 # logging
 python-logstash>=0.4.8
+
+# canlı ortam deployment için
+gunicorn>=21.0

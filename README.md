@@ -1,6 +1,6 @@
 # TurAssist — Yol Yardım Backend Sistemi
 
-Günde 10.000+ yardım talebini karşılayan, 81 ilde hizmet veren çekici çağırma ve sigorta entegrasyon platformu. Django REST Framework üzerine inşa edilmiş, Celery ile asenkron görev yönetimi, ClickHouse ile analitik altyapısı sunan ölçeklenebilir bir backend sistemi.
+Günde 10.000+ yardım talebini karşılayan, 81 ilde hizmet veren çekici çağırma ve sigorta entegrasyon platformu. Django REST Framework üzerine inşa edilmiş, Celery ile asenkron görev yönetimi, ClickHouse ile analitik altyapısı ve ELK Stack ile merkezi log takibi sunan ölçeklenebilir bir backend sistemi.
 
 ---
 
@@ -26,6 +26,11 @@ Django REST API      WebSocket Server
    │            │            │
 PostgreSQL  Redis Cache  ClickHouse
 (OLTP)      (TTL)        (OLAP/Analitik)
+            │
+   ┌────────┴────────────────┐
+   │            │            │
+Logstash  Elasticsearch  Kibana
+(UDP 5959)  (indeks)     (dashboard)
 ```
 
 **Teknoloji Seçim Gerekçeleri:**
@@ -38,6 +43,7 @@ PostgreSQL  Redis Cache  ClickHouse
 | Operasyonel DB | PostgreSQL | ACID garantisi, `SELECT FOR UPDATE` desteği |
 | Analitik DB | ClickHouse | Kolon bazlı depolama, 50M satırı saniyeler içinde tarar |
 | Cache | Redis | Provider listesi TTL cache, Celery broker |
+| Log takibi | ELK Stack | Merkezi log yönetimi, Kibana ile filtreleme ve analiz |
 | Container | Docker Compose | Tekrarlanabilir ortam, servis izolasyonu |
 
 ---
@@ -46,7 +52,7 @@ PostgreSQL  Redis Cache  ClickHouse
 
 - Docker >= 24.0
 - Docker Compose V2 (`docker compose` — tire olmadan)
-- 4GB+ RAM (ClickHouse için)
+- 4GB+ RAM (ClickHouse + Elasticsearch için)
 
 ```bash
 docker --version          # Docker version 24+
@@ -90,6 +96,10 @@ CLICKHOUSE_PORT=9000
 CLICKHOUSE_DB=turassist
 CLICKHOUSE_USER=default
 CLICKHOUSE_PASSWORD=
+
+# Logstash
+LOGSTASH_HOST=logstash
+LOGSTASH_PORT=5959
 ```
 
 ### 3. Servisleri ayağa kaldır
@@ -108,6 +118,9 @@ docker compose up --build
 | redis | 6379 (iç) | Broker + cache |
 | celery | — | Async worker |
 | clickhouse | 9000 (iç) | Analitik DB |
+| elasticsearch | 9200 (iç) | Log indeksleme |
+| logstash | 5959/udp (iç) | Log pipeline |
+| kibana | 5601 | Log dashboard |
 
 ### 4. Veritabanını hazırla
 
@@ -126,7 +139,13 @@ print('ClickHouse tablosu hazır')
 "
 ```
 
-### 5. Test verisi ekle
+### 5. Kibana index pattern oluştur
+
+```
+http://localhost:5601 → Management → Index Patterns → Create → turassist-logs-*
+```
+
+### 6. Test verisi ekle
 
 ```bash
 docker compose exec web1 python manage.py shell -c "
@@ -152,7 +171,7 @@ ReDoc: `http://localhost/api/redoc/`
 curl -X POST http://localhost/api/requests/ \
   -H "Content-Type: application/json" \
   -d '{
-    "customer_name": "Ali Veli",
+    "customer_name": "Barış Karabuğa",
     "policy_number": "POL-001",
     "lat": 41.01,
     "lon": 28.98,
@@ -235,12 +254,36 @@ docker compose logs -f celery
 
 ---
 
+## Log Takibi — ELK Stack
+
+Tüm uygulama logları merkezi olarak ELK Stack üzerinden yönetilir. Django, `python-logstash` kütüphanesi ile logları UDP üzerinden Logstash'e gönderir. Logstash bunları Elasticsearch'e indeksler, Kibana üzerinden görselleştirilir.
+
+```bash
+# Kibana dashboard
+http://localhost:5601
+
+# Logstash durumu
+docker compose logs -f logstash
+
+# Elasticsearch sağlık kontrolü
+curl http://localhost:9200/_cluster/health
+```
+
+Kibana'da yapılabilecekler:
+
+- `request_id` ile bir talebin baştan sona tüm log akışını takip etmek
+- Son 1 saatteki `ERROR` loglarını listelemek
+- Sigorta bildirimi retry sayısını grafik olarak izlemek
+- Provider atama sürelerini histogram olarak görmek
+
+---
+
 ## Yük Dengeleme
 
 Nginx `least_conn` algoritması ile 3 Django instance'ına dağıtım:
 
 ```bash
-# 6 istek gönder, logda 3 farklı instance görmeli
+# 6 istek gönder, logda 3 farklı instance gözükecektir.
 for i in {1..6}; do
   curl -s -X POST http://localhost/api/requests/ \
     -H "Content-Type: application/json" \
@@ -306,6 +349,9 @@ docker compose exec web1 python manage.py shell
 
 # ClickHouse bağlantı testi
 docker compose exec clickhouse clickhouse-client --query "SELECT 1"
+
+# Elasticsearch sağlık kontrolü
+curl http://localhost:9200/_cluster/health
 ```
 
 ---
@@ -331,6 +377,7 @@ destechchallenge/
 │       ├── test_views.py
 │       └── test_tasks.py
 ├── nginx.conf            # Load balancer konfigürasyonu
+├── logstash.conf         # Logstash pipeline konfigürasyonu
 ├── docker-compose.yml
 ├── Dockerfile
 ├── requirements.txt

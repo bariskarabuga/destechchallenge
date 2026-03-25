@@ -18,7 +18,11 @@ services:
     container_name: django_1
     command: >
       sh -c "python manage.py migrate &&
-             python manage.py runserver 0.0.0.0:8000"
+             if [ \"$$DJANGO_ENV\" = 'production' ]; then
+               gunicorn config.wsgi:application --workers 4 --bind 0.0.0.0:8000;
+             else
+               python manage.py runserver 0.0.0.0:8000;
+             fi"
     volumes:
       - .:/app
     env_file:
@@ -32,7 +36,12 @@ services:
   web2:
     build: .
     container_name: django_2
-    command: python manage.py runserver 0.0.0.0:8000
+    command: >
+      sh -c "if [ \"$$DJANGO_ENV\" = 'production' ]; then
+               gunicorn config.wsgi:application --workers 4 --bind 0.0.0.0:8000;
+             else
+               python manage.py runserver 0.0.0.0:8000;
+             fi"
     volumes:
       - .:/app
     env_file:
@@ -46,7 +55,12 @@ services:
   web3:
     build: .
     container_name: django_3
-    command: python manage.py runserver 0.0.0.0:8000
+    command: >
+      sh -c "if [ \"$$DJANGO_ENV\" = 'production' ]; then
+               gunicorn config.wsgi:application --workers 4 --bind 0.0.0.0:8000;
+             else
+               python manage.py runserver 0.0.0.0:8000;
+             fi"
     volumes:
       - .:/app
     env_file:
@@ -67,7 +81,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U appuser -d appdb" ]
+      test: ["CMD-SHELL", "pg_isready -U appuser -d appdb"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -76,7 +90,7 @@ services:
     image: redis:7-alpine
     container_name: redis
     healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -84,7 +98,12 @@ services:
   celery:
     build: .
     container_name: celery_worker
-    command: celery -A config worker --loglevel=info
+    command: >
+      sh -c "if [ \"$$DJANGO_ENV\" = 'production' ]; then
+               celery -A config worker --loglevel=info --concurrency=4;
+             else
+               celery -A config worker --loglevel=info;
+             fi"
     volumes:
       - .:/app
     env_file:
@@ -106,6 +125,7 @@ services:
       nofile:
         soft: 262144
         hard: 262144
+
   elasticsearch:
     image: elasticsearch:8.13.0
     container_name: elasticsearch
@@ -118,7 +138,7 @@ services:
     volumes:
       - elastic_data:/usr/share/elasticsearch/data
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:9200" ]
+      test: ["CMD", "curl", "-f", "http://localhost:9200"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -144,6 +164,7 @@ services:
     depends_on:
       elasticsearch:
         condition: service_healthy
+
 volumes:
   postgres_data:
   elastic_data:
